@@ -1,20 +1,32 @@
-
+## Import packages
 
 using LinearAlgebra
 using LsqFit # modified version that accepts time limit. Use https://github.com/Gkreindler/LsqFit.jl
 
 
-"""
-Creates a random matrix of initial conditions, taking boudns into account
-"""
 function random_initial_conditions(theta0, theta_lower, theta_upper, n_init)
+    """
+        Creates a random matrix of initial conditions, taking bounds into account
+        
+        Inputs:
+            theta_0 = matrix of initial values of parameters
+            theta_lower = matrix of lower bound of parameters
+            theta_upper = matrix of upper bound of parameters
+            n_init = number of initial conditions
 
+        Output:
+            a random matrix of initial conditions
+    """
     n_params = length(theta0)
 
-    theta0_mat = zeros(n_init, n_params)
+    ## matrix of random initial conditions
+    theta0_mat = zeros(n_init, n_params) 
 
     for i=1:n_init
         for j=1:n_params
+            ## for each parameter
+
+            ## find the bounds
 
             θL = theta_lower[j]
             θH = theta_upper[j]
@@ -35,37 +47,54 @@ function random_initial_conditions(theta0, theta_lower, theta_upper, n_init)
     return theta0_mat
 end
 
-"""
-    theta = typically the first stage estimate
-    momfn = moment function loaded with data and other parameters
-"""
+
 function vcov_gmm_iid(theta, momfn)
+    """
+        Creates a Variance-Covariance matrix 
+
+        Inputs:
+            theta = typically the first stage estimate
+            momfn = moment function loaded with data and other parameters
+
+        Output:
+            Variance-Covariance matrix 
+    """
     # compute matrix of moments
     mom_matrix = momfn(theta)
 
+    n_observations = size(mom_matrix, 1)
+
     # compute variance covariance matrix under iid assumption
     # ensure it's Hermitian
-    n_observations = size(mom_matrix, 1)
     vcov_matrix = Hermitian(transpose(mom_matrix) * mom_matrix / n_observations)
 
     return vcov_matrix
 end
 
-# TODO: describe what this wrapper does
-"""
-"""
+
 function gmm_obj(;theta, Whalf, momfn, show_theta=false)
+    """
+        Creates a matrix of means of moments 
+
+        Inputs:
+            theta = 
+            Whalf = Lower half of the Cholesky decomposed weighting matrix (W)
+            mofm = moment function loaded with data and other parameters
+
+        Output:
+
+    """
 
 	# print parameter vector at current step
 	show_theta && println(">>> theta ", theta, " ")
 
-	# compute moments
+	# compute moments for the parameter vector
 	mymoms = momfn(theta)
 
-	# multiply by (Cholesky) half matrice and take means
+	# take means for each moment and multiply by (Cholesky) lower half matrice
 	mean_mymoms = vec(mean(mymoms, dims=1) * Whalf)
 
-	# write the value of the objective function at the end of the line
+	# write the value of the objective function at the end of the line = e'We
 	show_theta && println(">>> obj value:", transpose(mean_mymoms) * mean_mymoms)
 
 	return mean_mymoms
@@ -86,6 +115,22 @@ function curve_fit_wrapper(
 				time_limit=-1,
                 show_trace=true
 			)
+
+    """
+        Finds out the estimated values of parameters
+    
+        Inputs:
+            idx = iteration
+            myobjfunction = objective function
+            Whalf = Lower half of the Cholesky decomposed weighting matrix (W)
+            n_moms = number of moments
+            theta_initial_vec = initial values of theta (vector form)
+            theta_lower = vector of lower bounds of parameters
+            theta_upper = vector of upper bounds of parameters
+    
+        Output:
+            results - the estimated values of parameters
+    """
 
     show_trace && println("starting iteration ", idx)
 
@@ -131,35 +176,7 @@ function curve_fit_wrapper(
 	return results_df
 end
 
-"""
 
-    gmm_2step()
-
-Generalized method of moments (GMM) or classical minimum distance (CMD), with (optional) two-step optimal weighting matrix.
-
-momfn = the moment function
-    - should take a single vector argument
-    - data etc is already "loaded" in this function
-theta0 = initial condition (vector)
-theta_lower, theta_upper = bounds (vectors, can include +/-Inf)
-vcov_fn = function to compute variance covariance matrix. By default, vcov_gmm_iid which assumes data is iid.
-n_theta0 = number of initial conditions
-n_moms = size of moment function (number of moments) TODO: get this auto
-results_dir_path = where to write results
-Wstep1 = weighting matrix (default = identity matrix).
-        Should be Hermitian (this will be enforced).
-        Will be Cholesky decomposed
-normalize_weight_matrix = boolean, if true, aim for the initial objective function to be <= O(1)
-jacobian = provide jacobian function
-write_results_to_file = 
-    0 = nothing written to file
-    1 = write objects to file, including one csv with all runs (once for first stage, once for second stage)
-    2 = write objects to file, including one csv per each run
-run_parallel  = individual runs in parallel vs in serial (default=parallel)
-show_trace = show trace of curve_fit from LsqFit?
-maxIter    = maximum iterations for curve_fit from LsqFit
-show_progress = pass on to objective function
-"""
 function gmm_2step(;
 			momfn_loaded,
 			theta0,
@@ -179,6 +196,38 @@ function gmm_2step(;
 			show_theta=false,
             show_progress=false)
 
+    """
+        Generalized method of moments (GMM) or classical minimum distance (CMD), with (optional) two-step optimal weighting matrix.
+
+        Inputs:
+            momfn_loaded = moments function with certain parameters already "loaded"
+                                - should take a single vector argument
+                                - data etc is already "loaded" in this function
+            theta0 = initial condition (vector)
+            theta_lower, theta_upper = bounds (vectors, can include +/-Inf)
+            vcov_fn = function to compute variance covariance matrix. By default, vcov_gmm_iid which assumes data is iid.
+            run_parallel  = individual runs in parallel vs in serial (default=parallel)
+            two_step = whether to do estimation in 2 steps
+            n_moms = size of moment function (number of moments) TODO: get this auto
+            Wstep1 = weighting matrix (default = identity matrix).
+                        - Should be Hermitian (this will be enforced).
+                        - Will be Cholesky decomposed
+            normalize_weight_matrix = boolean, if true, aim for the initial objective function to be <= O(1)
+            results_dir_path = where to write results
+            write_results_to_file = 
+                0 = nothing written to file
+                1 = write objects to file, including one csv with all runs (once for first stage, once for second stage)
+                2 = write objects to file, including one csv per each run
+            maxIter = maximum iterations for curve_fit from LsqFit
+            time_limit = time limit within which to complete estimation
+            show_trace = show trace of curve_fit from LsqFit?
+            show_theta = show theta
+            show_progress = pass on to objective function
+
+        Output:
+                
+    """
+
 ## Basic checks
     if write_results_to_file ∉ [0, 1, 2]
         error("write_results_to_file should be 0, 1, or 2")
@@ -192,7 +241,11 @@ function gmm_2step(;
 	if isa(theta0, Vector)
 		theta0 = Matrix(transpose(theta0))
 	end
+
+    ## number of parameters
     n_params = size(theta0, 2)
+
+    ## number of inital values of parameters
     n_theta0 = size(theta0, 1)
 
 ## if not provided, compute number of moments by running moment function once
@@ -214,7 +267,7 @@ function gmm_2step(;
 
 ## Initial weighting matrix W
 	if isnothing(Wstep1)
-        show_progress && println("GMM => using identity W1")
+        show_progress && println("GMM => using identity matrix as W1")
 
         # if not provided, use identity weighting matrix
         @assert isnothing(Wstep1)
@@ -228,8 +281,10 @@ function gmm_2step(;
         CSV.write(outputfile, Tables.table(Wstep1), header=false)
     end
 
-	# cholesky half. satisfies Whalf * transpose(Whalf) = W
+	# lower half of Cholesky-decomposed Weighting matrix W 
 	initialWhalf = Matrix(cholesky(Hermitian(Wstep1)).L)
+
+    # assert that this satisfies Whalf * transpose(Whalf) = W
 	@assert norm(initialWhalf * transpose(initialWhalf) - Wstep1) < 1e-10
 
 ## normalize weight matrix such that the objective function is <= O(1) (very roughly speaking)
@@ -501,9 +556,6 @@ function gmm_2step(;
 end
 
 
-
-## Serial (not parallel) bootstrap with multiple initial conditions
-
 function bootstrap_2step(;
                     boot_run_idx,
 					momfn,
@@ -525,6 +577,28 @@ function bootstrap_2step(;
                     show_progress=false
 					)
 
+    """
+        Serial (not parallel) bootstrap with multiple initial conditions
+
+        Inputs: 
+            boot_run_idx = Iteration number 
+            mofn = moment function loaded with data and other parameters
+            data = original data to bootstrap from
+            theta0_boot = initial value of parameters for bootstrapping
+            theta_lower = lower bound on parameters
+            theta_upper = upper bound on parameters
+            theta_hat = old parameter value
+            rootpath_boot_output = output path for bootstrapping
+            sample_data_fn = function for sampling data
+            boot_rng = Random number (like seed)
+            write_results_to_file = whether to write the results to file 
+            maxIter = maximum number of iterations  
+            time_limit = time limit for estimation 
+            show_trace = whether to show trace of curve_fit from LsqFit
+            throw_exceptions = whether to throw exceptions 
+            show_theta = whether to display estimated theta each time 
+            show_progress = whether display progress during estimation
+    """
 try
 	show_progress && print(".")
 
@@ -549,7 +623,7 @@ try
         end	
     else
         
-        # apply the provided function
+        # apply the provided function for sampling
         data_dict_boot = sample_data_fn(data, boot_rng)
     end
 
@@ -616,14 +690,29 @@ function boot_cleanup(;
 			maxIter=100,
 			time_limit=-1
 			)
-	#=
-		1. read optW and check not empty
-		2. load data and big mats
-		3. collect initial condtions to run
-		4. define function
-		5. run wrapper and write to file
-		6. write all results to 2nd stage file
-	=#
+	"""
+        1. read optW and check not empty
+        2. load data and big mats
+        3. collect initial condtions to run
+        4. define function
+        5. run wrapper and write to file
+        6. write all results to 2nd stage file
+
+        Inputs: 
+            rootpath_input = 
+            boot_folder = 
+            idx_batch = 
+            idx_run = 
+            idx_boot_file = 
+            mymomfunction = function
+            show_trace = whether to show trace of curve_fit from LsqFit
+            maxIter = maximum number of iterations to run during estimation 
+            time_limit = time limit to run estimation 
+
+        Output:
+            ??
+		
+	"""
 	println("\n\n\n... Processing batch ", idx_batch, " run ", idx_run, "\n\n\n")
 
 	## Step 1. Read optW and check it's ok
@@ -734,10 +823,20 @@ function vector_theta_fix(mytheta, theta_fix)
 end
 
 
-"""
-Calls the moment function `momfn` combining `mytheta` and the fixed parameters in `theta_fix`
-"""
+
 function momfn_theta_fix(momfn, mytheta, mydata_dict, theta_fix)
+    """
+        Calls the moment function `momfn` combining `mytheta` and the fixed parameters in `theta_fix`
+
+        Inputs: 
+            mofn = moment function 
+            mytheta = estimated parameters
+            mydata_dict = data 
+            theta_fix = Fixed parameters
+
+        Output = 
+            Moments run on the full parameter vector
+    """
 
     # indices of parameters that are fixed and those that need to be estimated
     idxs_fixed = findall(x -> ~isnothing(x), theta_fix)
@@ -754,6 +853,16 @@ function momfn_theta_fix(momfn, mytheta, mydata_dict, theta_fix)
 end
 
 function omega_subset(myomega, moms_subset)
+    """
+        ?? 
+
+        Inputs: 
+            myomega = 
+            moms_subset = subset of moments 
+
+        Output:
+
+    """
     if isa(myomega, Matrix)
         return myomega[moms_subset, moms_subset]
     elseif isa(myomega, Function)
@@ -762,10 +871,6 @@ function omega_subset(myomega, moms_subset)
 end
 
 
-"""
-myfactor: higher factor = larger changes in parameters
-max range -- in order to avoid sampling outside boundaries
-"""
 function compute_jacobian(;
         momfn,
         data,
@@ -776,6 +881,23 @@ function compute_jacobian(;
         moms_subset=nothing,
         myfactor=1.0)
     
+    """
+        Compute Jacobian matrix (??)
+        
+        Inputs: 
+            mofn = moment function
+            data = data
+            theta_hat = estimated parameters
+            theta_upper = upper bound on parameters
+            theta_lower = lower bound on parameters 
+            theta_fix = fixed parameters 
+            moms_subet = subset of moments
+            myfactor = higher factor = larger changes in parameters
+
+        Output:
+            Jacobian matrix
+    """
+
     # subset parameter and moments, if applicable
     if ~isnothing(theta_fix)
 
@@ -811,24 +933,6 @@ function compute_jacobian(;
 end
 
 
-"""
-    run_gmm(; momfn, data, theta0, theta0_boot=nothing, theta_upper=nothing, theta_lower=nothing, gmm_options=nothing)
-
-Wrapper for GMM/CMD with multiple initial conditions and optional bootstrap inference.
-
-# Arguments
-- momfn: the moment function momfn(theta, data)
-- data: any object
-- theta0: matrix of size main_n_start_pts x n_params, main_n_start_pts = gmm_options["main_n_start_pts] and n_params is length of theta
-- theta0_boot: matrix of size (boot_n_start_pts * boot_n_runs) x n_params
-- theta_lower: vector of lower bounds (default is -Inf)
-- theta_upper: vector of upper bounds (default is +Inf)
-
-Note: all arguments must be named (indicated by the ";" at the start), meaning calling [1] will work but [2] will not:
-[1] run_gmm(momfn=my_moment_function, data=mydata, theta0=my_theta0)
-[2] run_gmm(my_moment_function, mydata, my_theta0)
-"""
-
 function run_gmm(;
 		momfn,
 		data,
@@ -843,6 +947,32 @@ function run_gmm(;
         sample_data_fn=nothing, # function for slow bootstrapping
 		gmm_options=nothing,
 	)
+
+    """
+        Wrapper for GMM/CMD with multiple initial conditions and optional bootstrap inference.
+
+    Inputs:
+        momfn= the moment function momfn(theta, data)
+        data= any object
+        theta0 = matrix of size main_n_start_pts x n_params, main_n_start_pts = gmm_options["main_n_start_pts] and n_params is length of theta
+        theta0_boot = matrix of size (boot_n_start_pts * boot_n_runs) x n_params
+        theta_lower = vector of lower bounds (default is -Inf)
+        theta_upper = vector of upper bounds (default is +Inf)
+        W = weighting matrix, default is identity matrix
+        omega = 
+        theta_fix = fixed parameters 
+        moms_subset = subset of moments 
+        sample_data_fn = function for sampling from data 
+        gmm_options = options to feed into gmm function 
+
+        Note: all arguments must be named (indicated by the ";" at the start), meaning calling [1] will work but [2] will not:
+                [1] run_gmm(momfn=my_moment_function, data=mydata, theta0=my_theta0)
+                [2] run_gmm(my_moment_function, mydata, my_theta0)
+
+    Output:
+        Full results from GMM estimation
+        
+    """
 
 ## make local copy and run checks
     gmm_options = copy(gmm_options)
